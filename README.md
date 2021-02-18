@@ -2,7 +2,7 @@
 
 [External Metrics](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/external-metrics-api.md) is the blessed Kubernetes way of retrieving metrics and exposing them to the Kubernetes API to provide data for autoscaling decisions.
 
-However, by design, _only one_ provider of external metrics can be used at any given time.
+However, by design, _only one_ provider of external metrics can be used at any given time. There is an open proposal to fix this ([kubernetes-sigs/custom-metrics-apiserver#70](https://github.com/kubernetes-sigs/custom-metrics-apiserver/issues/70)), but in the meantime... Please meet the **external-metrics-multiplexer**!
 
 **external-metrics-multiplexer** allows running several External Metrics providers in Kubernetes at once, and reverse-proxies to providers based on metric prefixes.
 
