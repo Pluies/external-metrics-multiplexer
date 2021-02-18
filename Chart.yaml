@@ -1,0 +1,9 @@
+---
+apiVersion: v2
+name: external-metrics-multiplexer
+version: 1.0.0
+description: Allows several external metrics providers to be used concurrently
+home: https://github.com/Pluies/external-metrics-multiplexer/
+maintainers:
+- name: Florent Delannoy
+  email: hello@florentdelannoy.com

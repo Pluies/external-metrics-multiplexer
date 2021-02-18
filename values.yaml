@@ -1,0 +1,30 @@
+image: "nginx:alpine"
+
+replicas: 2
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 500Mi
+
+# Whether to create the APIService for external.metrics.k8s.io
+# Set to false if you'd like to create it manually
+createApiService: true
+
+# URL of the default metrics provider which provides the base path, for example:
+#
+# defaultProviderUrl: prometheus-adapter.prometheus.svc.cluster.local
+defaultProviderUrl: ~
+
+# A list of the metrics providers you want to support, for example:
+#
+# metricsProviders:
+#- name: prometheus
+#  prefix: "prometheus-"
+#  strip_prefix: true
+#  service: prometheus-adapter.prometheus.svc.cluster.local
+#- name: cloudwatch
+#  prefix: "cloudwatch-"
+#  strip_prefix: false
+#  service: k8s-cloudwatch-adapter.custom-metrics.svc.cluster.local
+metricsProviders: []
