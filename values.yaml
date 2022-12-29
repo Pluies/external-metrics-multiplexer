@@ -11,6 +11,16 @@ resources:
 # Set to false if you'd like to create it manually
 createApiService: true
 
+logging:
+  access:
+    # Access logging (json format)
+    # "all", "off", or "errors"
+    level: "off"
+  error:
+    # Error logging (text format)
+    # "debug", "info", "notice", "warn", "error", "crit", "alert", or "emerg"
+    level: notice
+
 # URL of the default metrics provider which provides the base path, for example:
 #
 # defaultProviderUrl: prometheus-adapter.prometheus.svc.cluster.local

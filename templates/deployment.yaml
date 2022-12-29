@@ -4,7 +4,7 @@ kind: Deployment
 metadata:
   name: metricsmultiplexer
 spec:
-  replicas: 1
+  replicas: {{ $.Values.replicas }}
   selector:
     matchLabels:
       app: metricsmultiplexer
@@ -22,10 +22,14 @@ spec:
         {{ if $.Values.resources }}
         resources:
 {{ toYaml $.Values.resources | indent 10 }}
-        {{ end }}
+        {{- end }}
         command:
         - "sh"
         - "/multiplexer-entrypoint.sh"
+        ports:
+        - name: https
+          containerPort: 8443
+          protocol: TCP
         volumeMounts:
         - name: config
           mountPath: /multiplexer-entrypoint.sh
@@ -33,7 +37,11 @@ spec:
         - name: config
           mountPath: /multiplexer-nginx.conf
           subPath: multiplexer-nginx.conf
+        - name: config
+          mountPath: /reloader.sh
+          subPath: reloader.sh
       volumes:
       - name: config
         configMap:
           name: metricsmultiplexer
+          defaultMode: 0544
