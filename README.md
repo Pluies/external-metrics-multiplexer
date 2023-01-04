@@ -24,9 +24,9 @@ Regarding authentication/authorization: in order to accept HTTPS requests from t
 
 ⚠️  This means we use `insecureSkipTLSVerify: true` in the APIService, which is [probably ok](https://github.com/kubernetes-sigs/metrics-server/issues/544) but obviously not recommended.
 
-Then, to talk to the metrics providers, we create a ServiceAccount with permissions to read metrics (see [templates/rbac.yaml](./templates/rbac.yaml)) and use its ServiceAccount token the communicate with the backends.
+Then, to talk to the metrics providers, we create a ServiceAccount with permissions to read metrics (see [templates/rbac.yaml](./templates/rbac.yaml)) and use its ServiceAccount token to communicate with the backends. This is required (rather than passing the token of the requester) because some requesters use X.509 certificates which cannot be passed through (at least not without modifying the backend services to parse them out of a header).
 
-⚠️  This hasn't been thoroughly reviewed for security and may expose metrics to cluster-local workloads without proper RBAC!
+⚠️  This means cluster-local workloads could see the metrics without RBAC
 
 ## Configure & install
 

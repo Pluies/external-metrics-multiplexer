@@ -4,60 +4,97 @@ kind: ConfigMap
 metadata:
   name: metricsmultiplexer
 data:
-  entrypoint.sh: |
+  reloader.sh: |
     #!/bin/sh
+    set -eu -o pipefail
 
-    # Generate self-signed SSL certs (not great!)
-    apk add openssl && openssl req -x509 -nodes -days 365 -subj "/C=NA/ST=NA/O=NA/CN=NA" -newkey rsa:2048 -keyout /etc/nginx/ssl.key -out /etc/nginx/ssl.crt
-
-    # Fill in the ServiceAccount token in the nginx config
+    # reload nginx config with new service account token
     TOKEN=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`
     cat multiplexer-nginx.conf | sed "s/KUBERNETESAUTHTOKEN/$TOKEN/" > /etc/nginx/conf.d/default.conf
+    echo '{"msg": "inotify: change detected", "level": "INFO", "file": "'$0'"}'
+
+    nginx -t -q
+    if [ $? -eq 0 ]
+    then
+      # config is valid, reload nginx config
+      set +e # don't exit on error (e.g. nginx not yet started)
+      echo '{"msg": "valid config, reloading", "level": "INFO", "file": "'$0'"}'
+      nginx -q -s reload
+      set -e
+    else
+      # config is invalid, log the error and exit
+      echo '{"msg": "invalid config", "level": "FATAL", "file": "'$0'"}'
+      nginx -t
+      exit 1
+    fi
+  entrypoint.sh: |
+    #!/bin/sh
+    set -eu -o pipefail
+
+    # Generate self-signed SSL certs (not great!)
+    apk add openssl inotify-tools && openssl req -x509 -nodes -days 3650 -subj "/C=NA/ST=NA/O=NA/CN=NA" -newkey rsa:2048 -keyout /etc/nginx/ssl.key -out /etc/nginx/ssl.crt
+
+    /reloader.sh # initial config
+
+    # Watch for changes to the bound service account token or configmap and reload nginx config
+    inotifyd reloader.sh /var/run/secrets/kubernetes.io/serviceaccount/token:n &
+    inotifyd reloader.sh /multiplexer-nginx.conf:n &
 
     # Finally, start up nginx
     nginx -g 'daemon off;'
 
   multiplexer-nginx.conf: |
+    log_format logger-json escape=json '{"source": "nginx", "time": $msec, "resp_body_size": $body_bytes_sent, "host": "$http_host", "address": "$remote_addr", "request_length": $request_length, "method": "$request_method", "uri": "$request_uri", "status": $status,  "user_agent": "$http_user_agent", "resp_time": $request_time, "proxy_host": "$proxy_host", "upstream_addr": "$upstream_addr"}';
+
     server {
-     listen 443 ssl;
-     ssl_certificate      /etc/nginx/ssl.crt;
-     ssl_certificate_key  /etc/nginx/ssl.key;
 
-     resolver kube-dns.kube-system.svc.cluster.local valid=5s;
+      {{ if eq $.Values.logging.access.level "errors"}}
+      map $status $loggable {
+        ~^[23]  0;
+        default 1;
+      }
+      access_log /dev/stdout logger-json if=$loggable;
+      {{ else if eq $.Values.logging.access.level "all"}}
+      access_log /dev/stdout logger-json;
+      {{- end }}
 
-     # Ensure correct rewrites
-     rewrite_log on;
-     error_log   /dev/stdout notice;
+      listen 8443 ssl;
+      ssl_certificate      /etc/nginx/ssl.crt;
+      ssl_certificate_key  /etc/nginx/ssl.key;
 
-     # Healthcheck
-     location = /health {
-       return 200 'ok';
-     }
+      resolver kube-dns.kube-system.svc.cluster.local valid=5s;
 
-     # Authorization: use the ServiceAccount Token
-     # (Replaced with actual value in entrypoint.sh)
-     set $authz "Bearer KUBERNETESAUTHTOKEN";
+      # Ensure correct rewrites
+      rewrite_log on;
+      error_log   /dev/stdout {{  $.Values.logging.error.level }};
 
-     {{ range $.Values.metricsProviders }}
-     # {{ .name }}
-     set ${{ .name }} {{ .service }};
-     location ~* /apis/external.metrics.k8s.io/v1beta1/namespaces/.*/{{ .prefix }} {
-       {{ if .strip_prefix }}
-       rewrite ^(/apis/external.metrics.k8s.io/v1beta1/namespaces/.*)/{{ .prefix }}(.*)$ $1/$2 break;
-       {{ end }}
-       proxy_set_header Authorization $authz;
-       proxy_pass https://${{ .name }}$uri$is_args$args;
-     }
-     {{ end }}
+      # Authorization: use the ServiceAccount Token
+      # (Replaced with actual value by reloader.sh)
+      set $authz "Bearer KUBERNETESAUTHTOKEN";
+      proxy_set_header Authorization $authz;
 
-     # Catch-all: API base
-     set $defaultupstream {{ $.Values.defaultProviderUrl }};
-     location ~* /apis/external.metrics.k8s.io/v1beta1/ {
-       proxy_set_header Authorization $authz;
-       proxy_pass https://$defaultupstream;
-     }
-     location / {
-       proxy_set_header Authorization $authz;
-       proxy_pass https://$defaultupstream;
-     }
+      # Healthcheck
+      location = /health {
+        return 200 'ok';
+      }
+
+      {{ range $.Values.metricsProviders }}
+      # {{ .name }}
+      set ${{ .name }} {{ .service }};
+      location ~* /apis/external.metrics.k8s.io/v1beta1/namespaces/.*/{{ .prefix }} {
+        {{ if .strip_prefix }}
+        rewrite ^(/apis/external.metrics.k8s.io/v1beta1/namespaces/.*)/{{ .prefix }}(.*)$ $1/$2 break;
+        {{- end }}
+        proxy_pass https://${{ .name }}$uri$is_args$args;
+      }
+      {{ end }}
+
+      # Catch-all: API base
+      set $defaultupstream {{ $.Values.defaultProviderUrl }};
+      location ~* /apis/external.metrics.k8s.io/v1beta1/ {
+        proxy_pass https://$defaultupstream;
+      }
+      location / {
+        proxy_pass https://$defaultupstream;
+      }
     }
